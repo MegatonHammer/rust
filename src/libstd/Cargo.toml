@@ -24,6 +24,13 @@ profiler_builtins = { path = "../libprofiler_builtins", optional = true }
 #std_unicode = { path = "../libstd_unicode" }
 unwind = { path = "../libunwind" }
 
+[target.'cfg(not(target_os = "switch"))'.dependencies]
+libc = { path = "../rustc/libc_shim" }
+alloc_system = { path = "../liballoc_system" }
+
+[target.'cfg(target_os = "switch")'.dependencies]
+ralloc = { git = "https://github.com/megatonhammer/ralloc" }
+
 [dev-dependencies]
 rand = "0.3"
 
