@@ -13,16 +13,15 @@ path = "lib.rs"
 crate-type = ["dylib", "rlib"]
 
 [dependencies]
-alloc = { path = "../liballoc" }
+#alloc = { path = "../liballoc" }
 alloc_jemalloc = { path = "../liballoc_jemalloc", optional = true }
 alloc_system = { path = "../liballoc_system" }
 panic_unwind = { path = "../libpanic_unwind", optional = true }
 panic_abort = { path = "../libpanic_abort" }
-core = { path = "../libcore" }
-libc = { path = "../rustc/libc_shim" }
+#core = { path = "../libcore" }
 compiler_builtins = { path = "../rustc/compiler_builtins_shim" }
 profiler_builtins = { path = "../libprofiler_builtins", optional = true }
-std_unicode = { path = "../libstd_unicode" }
+#std_unicode = { path = "../libstd_unicode" }
 unwind = { path = "../libunwind" }
 
 [dev-dependencies]
