@@ -372,6 +372,9 @@ extern crate alloc_system;
 #[cfg(target_os = "switch")]
 extern crate ralloc;
 
+#[cfg(target_os = "switch")]
+extern crate megaton_hammer;
+
 extern crate std_unicode;
 #[doc(masked)]
 extern crate libc;
