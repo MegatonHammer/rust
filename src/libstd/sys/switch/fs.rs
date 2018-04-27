@@ -15,19 +15,26 @@ use io::{self, SeekFrom};
 use path::{Path, PathBuf};
 use sys::time::SystemTime;
 use sys::{unsupported, Void};
+use megaton_hammer::nn::fssrv::sf::{IFile, IFileSystem, IFileSystemProxy, IDirectory};
+use megaton_hammer::fs::*;
 
-pub struct File(Void);
+pub struct File(VFile);
 
-pub struct FileAttr(Void);
+#[derive(Clone)]
+pub struct FileAttr {
+    size: u64
+}
 
-pub struct ReadDir(Void);
+pub struct ReadDir {
+    dir: IDirectory
+}
 
-pub struct DirEntry(Void);
+pub struct DirEntry(IDirectoryEntry);
 
 #[derive(Clone, Debug)]
 pub struct OpenOptions { }
 
-pub struct FilePermissions(Void);
+pub struct FilePermissions;
 
 pub struct FileType(Void);
 
@@ -36,11 +43,11 @@ pub struct DirBuilder { }
 
 impl FileAttr {
     pub fn size(&self) -> u64 {
-        match self.0 {}
+        self.size
     }
 
     pub fn perm(&self) -> FilePermissions {
-        match self.0 {}
+        FilePermissions
     }
 
     pub fn file_type(&self) -> FileType {

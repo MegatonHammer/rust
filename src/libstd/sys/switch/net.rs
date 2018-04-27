@@ -13,11 +13,24 @@ use io;
 use net::{SocketAddr, Shutdown, Ipv4Addr, Ipv6Addr};
 use time::Duration;
 use sys::{unsupported, Void};
+use megaton_ipc::nn::socket::sf::IClient;
 
-pub struct TcpStream(Void);
+const AF_INET : u32 = 2;
+const SOCK_STREAM : u32 = 1;
 
-impl TcpStream { pub fn connect(_: &SocketAddr) -> io::Result<TcpStream> {
-        unsupported()
+pub struct TcpStream(Arc<IClient>, u32);
+
+impl TcpStream {
+    pub fn connect(addr: &SocketAddr) -> io::Result<TcpStream> {
+        let mut client = IClient::new_bsd_u();
+        if client.is_err() {
+            client = IClient::new_bsd_s();
+        }
+        let client = client?;
+        // TODO: Initialize if not already initialized...
+        let (bsd_errno, fd) = client.socket(AF_INET, SOCK_STREAM, 0);
+        // TODO: bsd_errno
+        Ok(TcpStream(client, fd))
     }
 
     pub fn connect_timeout(_: &SocketAddr, _: Duration) -> io::Result<TcpStream> {
@@ -44,8 +57,8 @@ impl TcpStream { pub fn connect(_: &SocketAddr) -> io::Result<TcpStream> {
         match self.0 {}
     }
 
-    pub fn read(&self, _: &mut [u8]) -> io::Result<usize> {
-        match self.0 {}
+    pub fn read(&self, read: &mut [u8]) -> io::Result<usize> {
+        Ok(self.0.read(self.1, read))
     }
 
     pub fn write(&self, _: &[u8]) -> io::Result<usize> {

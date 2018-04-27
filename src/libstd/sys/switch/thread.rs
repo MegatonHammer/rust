@@ -11,34 +11,49 @@
 use alloc::boxed::FnBox;
 use ffi::CStr;
 use io;
-use sys::{unsupported, Void};
 use time::Duration;
+use megaton_hammer::kernel::svc::*;
 
-pub struct Thread(Void);
+pub struct Thread(u32);
 
 pub const DEFAULT_MIN_STACK_SIZE: usize = 4096;
 
 impl Thread {
-    pub unsafe fn new<'a>(_stack: usize, _p: Box<FnBox() + 'a>)
+    pub unsafe fn new<'a>(stack: usize, p: Box<FnBox() + 'a>)
         -> io::Result<Thread>
     {
-        unsupported()
+        unsafe extern "C" fn start_fn(arg1: *mut ()) {
+            let p : Box<Box<FnBox()>> = Box::from_raw(arg1 as *mut Box<FnBox()>);
+            p();
+            exit_thread();
+        }
+
+        let (_res, thread) = create_thread(Some(start_fn as _), Box::into_raw(Box::new(p)) as usize as u64, stack as *mut _, 10, -2);
+        // TODO:
+        //if res != 0 {
+        //    return Err(io::Error::);
+        //}
+        let _res = start_thread(thread);
+        // TODO: handle res.
+        Ok(Thread(thread))
     }
 
     pub fn yield_now() {
-        // do nothing
+        Self::sleep(Duration::new(0, 0));
     }
 
     pub fn set_name(_name: &CStr) {
         // nope
     }
 
-    pub fn sleep(_dur: Duration) {
-        panic!("can't sleep");
+    pub fn sleep(dur: Duration) {
+        let rc = unsafe { sleep_thread(dur.as_secs() * 1_000_000_000 + dur.subsec_nanos() as u64) };
+        assert!(rc == 0);
     }
 
     pub fn join(self) {
-        match self.0 {}
+        // TODO: WaitSync on Thread ? Or do we need actual convars and shit.
+        panic!("Can't join");
     }
 }
 

@@ -52,11 +52,35 @@ pub fn unsupported<T>() -> io::Result<T> {
 
 pub fn unsupported_err() -> io::Error {
     io::Error::new(io::ErrorKind::Other,
-                   "operation not supported on wasm yet")
+                   "operation not supported by megaton-hammer yet")
 }
 
-pub fn decode_error_kind(_errno: i32) -> ErrorKind {
-    io::ErrorKind::Other
+// Only used in a single test (BufferedReader) and in various places of sys. We'll only use it in
+// sys::net.
+pub fn decode_error_kind(errno: i32) -> ErrorKind {
+    match errno {
+        libc::ECONNREFUSED => ErrorKind::ConnectionRefused,
+        libc::ECONNRESET => ErrorKind::ConnectionReset,
+        libc::EPERM | libc::EACCES => ErrorKind::PermissionDenied,
+        libc::EPIPE => ErrorKind::BrokenPipe,
+        libc::ENOTCONN => ErrorKind::NotConnected,
+        libc::ECONNABORTED => ErrorKind::ConnectionAborted,
+        libc::EADDRNOTAVAIL => ErrorKind::AddrNotAvailable,
+        libc::EADDRINUSE => ErrorKind::AddrInUse,
+        libc::ENOENT => ErrorKind::NotFound,
+        libc::EINTR => ErrorKind::Interrupted,
+        libc::EINVAL => ErrorKind::InvalidInput,
+        libc::ETIMEDOUT => ErrorKind::TimedOut,
+        libc::EEXIST => ErrorKind::AlreadyExists,
+
+        // These two constants can have the same value on some systems,
+        // but different values on others, so we can't use a match
+        // clause
+        x if x == libc::EAGAIN || x == libc::EWOULDBLOCK =>
+            ErrorKind::WouldBlock,
+
+        _ => ErrorKind::Other,
+    }
 }
 
 /// TODO: Do a proper abort using the exit stuff.
