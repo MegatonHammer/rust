@@ -54,7 +54,7 @@ pub fn unsupported<T>() -> io::Result<T> {
 
 pub fn unsupported_err() -> io::Error {
     io::Error::new(io::ErrorKind::Other,
-                   "operation not supported on wasm yet")
+                   "operation not supported on switch yet")
 }
 
 pub fn decode_error_kind(errno: i32) -> ErrorKind {
@@ -126,7 +126,7 @@ pub unsafe fn strlen(mut s: *const i8) -> usize {
 // generate these numbers.
 //
 // More seriously though this is just for DOS protection in hash maps. It's ok
-// if we don't do that on wasm just yet.
+// if we don't do that on switch just yet.
 pub fn hashmap_random_keys() -> (u64, u64) {
     (1, 2)
 }
