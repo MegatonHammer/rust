@@ -11,10 +11,11 @@
 // TODO: Properly implement mutex. The switch has multiple syscalls to implement
 // mutexes properly.
 
-use cell::UnsafeCell;
+use megaton_hammer::kernel::sync::Mutex as InternalMutex;
+use megaton_hammer::kernel::sync::RMutex as InternalRMutex;
 
 pub struct Mutex {
-    locked: UnsafeCell<bool>,
+    internal: InternalMutex
 }
 
 unsafe impl Send for Mutex {}
@@ -22,7 +23,7 @@ unsafe impl Sync for Mutex {} // no threads on wasm
 
 impl Mutex {
     pub const fn new() -> Mutex {
-        Mutex { locked: UnsafeCell::new(false) }
+        Mutex { internal: InternalMutex::new() }
     }
 
     #[inline]
@@ -31,25 +32,17 @@ impl Mutex {
 
     #[inline]
     pub unsafe fn lock(&self) {
-        let locked = self.locked.get();
-        assert!(!*locked, "cannot recursively acquire mutex");
-        *locked = true;
+        self.internal.lock()
     }
 
     #[inline]
     pub unsafe fn unlock(&self) {
-        *self.locked.get() = false;
+        self.internal.unlock()
     }
 
     #[inline]
     pub unsafe fn try_lock(&self) -> bool {
-        let locked = self.locked.get();
-        if *locked {
-            false
-        } else {
-            *locked = true;
-            true
-        }
+        self.internal.try_lock()
     }
 
     #[inline]
@@ -58,23 +51,33 @@ impl Mutex {
 }
 
 pub struct ReentrantMutex {
+    internal: InternalRMutex
 }
 
 impl ReentrantMutex {
     pub unsafe fn uninitialized() -> ReentrantMutex {
-        ReentrantMutex { }
+        ReentrantMutex {
+            internal: InternalRMutex::new()
+        }
     }
 
     pub unsafe fn init(&mut self) {}
 
-    pub unsafe fn lock(&self) {}
+    pub unsafe fn lock(&self) {
+        self.internal.lock()
+    }
 
     #[inline]
     pub unsafe fn try_lock(&self) -> bool {
-        true
+        self.internal.try_lock()
     }
 
-    pub unsafe fn unlock(&self) {}
+    pub unsafe fn unlock(&self) {
+        self.internal.unlock()
+    }
 
     pub unsafe fn destroy(&self) {}
 }
+
+unsafe impl Send for ReentrantMutex {}
+unsafe impl Sync for ReentrantMutex {}
