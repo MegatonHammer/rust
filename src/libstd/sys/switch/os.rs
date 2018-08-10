@@ -30,8 +30,9 @@ pub fn error_string(_errno: i32) -> String {
     "unknown error".to_string()
 }
 
+//static CWD: Mutex<Pa> = Mutex::new(PathBuf::new("romfs:/"));
 pub fn getcwd() -> io::Result<PathBuf> {
-    unsupported()
+    Ok(PathBuf::from("romfs:/"))
 }
 
 pub fn chdir(_p: &path::Path) -> io::Result<()> {

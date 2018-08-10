@@ -276,6 +276,7 @@
 #![feature(macro_vis_matcher)]
 #![feature(needs_panic_runtime)]
 #![feature(never_type)]
+#![feature(no_more_cas)]
 #![feature(exhaustive_patterns)]
 #![feature(num_bits_bytes)]
 #![feature(old_wrapping)]
@@ -368,6 +369,10 @@ extern crate alloc_system;
 extern crate megaton_hammer;
 #[cfg(target_os = "switch")]
 extern crate megaton_allocator;
+#[cfg(target_os = "switch")]
+#[macro_use]
+extern crate lazy_static;
+
 #[doc(masked)]
 extern crate libc;
 

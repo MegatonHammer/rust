@@ -22,6 +22,7 @@
 extern crate runwind;
 
 use io::{self, ErrorKind};
+use megaton_hammer::error::Module;
 
 pub mod args;
 #[cfg(feature = "backtrace")]
@@ -30,6 +31,7 @@ pub mod cmath;
 pub mod condvar;
 pub mod env;
 pub mod ext;
+pub mod fast_thread_local;
 pub mod fs;
 pub mod memchr;
 pub mod mutex;
@@ -130,4 +132,15 @@ pub unsafe fn strlen(mut s: *const i8) -> usize {
 // if we don't do that on switch just yet.
 pub fn hashmap_random_keys() -> (u64, u64) {
     (1, 2)
+}
+
+#[stable(feature = "rust1", since = "1.0.0")]
+impl From<::megaton_hammer::error::Error> for io::Error {
+    fn from(err: ::megaton_hammer::error::Error) -> io::Error {
+        match (err.module(), err.description_id()) {
+            (Ok(Module::FS), 2) => io::Error::from(io::ErrorKind::AlreadyExists),
+            //(Ok(Module::FS), 1002) => io::Error::from(io::ErrorKind::NotFound),
+            _ => io::Error::new(io::ErrorKind::Other, Box::new(err))
+        }
+    }
 }
