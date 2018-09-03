@@ -39,7 +39,6 @@ pub struct DirEntry {
     path: PathBuf,
     file_name: OsString,
     metadata: FileAttr,
-    file_type: FileType
 }
 
 #[derive(Clone, Debug)]
@@ -136,7 +135,7 @@ impl DirEntry {
     }
 
     pub fn file_type(&self) -> io::Result<FileType> {
-        Ok(self.file_type.clone())
+        Ok(self.metadata.file_type)
     }
 }
 
@@ -181,8 +180,6 @@ trait FilesystemOps {
     fn rmdir(&self, p: &Path) -> io::Result<()>;
     fn remove_dir_all(&self, path: &Path) -> io::Result<()>;
     fn readlink(&self, p: &Path) -> io::Result<PathBuf>;
-    fn symlink(&self, src: &Path, dst: &Path) -> io::Result<()>;
-    fn link(&self, src: &Path, dst: &Path) -> io::Result<()>;
     fn stat(&self, p: &Path) -> io::Result<FileAttr>;
     fn lstat(&self, p: &Path) -> io::Result<FileAttr>;
     fn canonicalize(&self, p: &Path) -> io::Result<PathBuf>;
@@ -204,14 +201,16 @@ trait FileOps {
 
 mod fspsrv {
     use io::{self, ErrorKind};
-    use super::{FilesystemOps, FileOps, OpenOptions, FileAttr, SeekFrom, FilePermissions, ReadDir};
-    use path::{Path, PathBuf};
-    use megaton_hammer::ipcdefs::nn::fssrv::sf::{IFile, IFileSystem};
+    use super::{FilesystemOps, FileOps, OpenOptions, FileAttr, SeekFrom, FilePermissions, ReadDir, FileType,DirEntry, ReadDirOps};
+    use path::{Path, PathBuf, Component};
+    use ffi::OsStr;
+    use megaton_hammer::ipcdefs::nn::fssrv::sf::{IFile, IDirectory, IFileSystem, IDirectoryEntry, DirectoryEntryType};
     use megaton_hammer::kernel::Object;
     use sync::atomic::{AtomicU64, Ordering};
     use sys::switch::unsupported;
     use sys::ext::ffi::OsStrExt;
     use core::slice;
+    use core::fmt::Debug;
 
     pub struct FspSrvFs<T>(IFileSystem<T>);
 
@@ -226,7 +225,52 @@ mod fspsrv {
         }
     }
 
-    impl<T: Object + 'static> FilesystemOps for FspSrvFs<T> {
+    #[derive(Debug)]
+    pub struct FspReadDir<T> {
+        internal: IDirectory<T>,
+        parent: PathBuf
+    }
+
+    impl<T: Object + Debug> ReadDirOps for FspReadDir<T> {}
+    impl<T: Object> Iterator for FspReadDir<T> {
+        type Item = io::Result<DirEntry>;
+
+        fn next(&mut self) -> Option<io::Result<DirEntry>> {
+            let mut entry: [IDirectoryEntry; 1] = [IDirectoryEntry {
+                path: [0; 0x300],
+                unk1: 0,
+                directory_entry_type: DirectoryEntryType::File,
+                filesize: 0,
+            }];
+            match self.internal.read(&mut entry) {
+                Ok(0) => return None,
+                Err(err) => return Some(Err(err.into())),
+                Ok(n) => ()
+            }
+            let size = entry[0].path.iter().position(|c| *c == b'\0').unwrap_or(0x300);
+            let file_name = OsStr::from_bytes(&entry[0].path[..size]);
+            Some(Ok(DirEntry {
+                path: self.parent.join(file_name),
+                file_name: file_name.into(),
+                metadata: FileAttr {
+                    size: entry[0].filesize,
+                    perm: FilePermissions,
+                    file_type: entry[0].directory_entry_type.into()
+                },
+            }))
+        }
+    }
+
+    impl From<DirectoryEntryType> for FileType {
+        fn from(ty: DirectoryEntryType) -> FileType {
+            match ty {
+                DirectoryEntryType::File => FileType::File,
+                DirectoryEntryType::Directory => FileType::Directory
+            }
+        }
+    }
+
+    impl<T: Object + Debug + 'static> FilesystemOps for FspSrvFs<T> {
         fn open(&self, path: &Path, opts: &OpenOptions) -> io::Result<Box<FileOps>> {
             let mut arr = [0u8; 0x301];
             let path_as_bytes = path.as_os_str().as_bytes();
@@ -260,46 +304,96 @@ mod fspsrv {
             }))
         }
         fn readdir(&self, p: &Path) -> io::Result<ReadDir> {
-            unsupported()
+            let mut arr = [0u8; 0x301];
+            let path_as_bytes = p.as_os_str().as_bytes();
+            (&mut arr[..path_as_bytes.len()]).copy_from_slice(path_as_bytes);
+            Ok(ReadDir(Box::new(FspReadDir {
+                internal: self.0.open_directory(3, &arr)?,
+                parent: p.into()
+            })))
         }
         fn unlink(&self, p: &Path) -> io::Result<()> {
-            unsupported()
+            let mut arr = [0u8; 0x301];
+            let path_as_bytes = p.as_os_str().as_bytes();
+            (&mut arr[..path_as_bytes.len()]).copy_from_slice(path_as_bytes);
+            self.0.delete_file(&arr)?;
+            Ok(())
         }
-        fn rename(&self, old: &Path, _new: &Path) -> io::Result<()> {
-            unsupported()
+        fn rename(&self, old: &Path, new: &Path) -> io::Result<()> {
+            let mut oldarr = [0u8; 0x301];
+            let path_as_bytes = old.as_os_str().as_bytes();
+            (&mut oldarr[..path_as_bytes.len()]).copy_from_slice(path_as_bytes);
+
+            let mut newarr = [0u8; 0x301];
+            let path_as_bytes = new.as_os_str().as_bytes();
+            (&mut newarr[..path_as_bytes.len()]).copy_from_slice(path_as_bytes);
+            self.0.rename_file(&oldarr, &newarr)?;
+            Ok(())
         }
         fn set_perm(&self, p: &Path, perm: FilePermissions) -> io::Result<()> {
             unsupported()
         }
         fn rmdir(&self, p: &Path) -> io::Result<()> {
-            unsupported()
+            let mut arr = [0u8; 0x301];
+            let path_as_bytes = p.as_os_str().as_bytes();
+            (&mut arr[..path_as_bytes.len()]).copy_from_slice(path_as_bytes);
+            self.0.delete_directory(&arr)?;
+            Ok(())
         }
-        fn remove_dir_all(&self, path: &Path) -> io::Result<()> {
-            unsupported()
+        fn remove_dir_all(&self, p: &Path) -> io::Result<()> {
+            let mut arr = [0u8; 0x301];
+            let path_as_bytes = p.as_os_str().as_bytes();
+            (&mut arr[..path_as_bytes.len()]).copy_from_slice(path_as_bytes);
+            self.0.delete_directory_recursively(&arr)?;
+            Ok(())
         }
         fn readlink(&self, p: &Path) -> io::Result<PathBuf> {
             unsupported()
         }
-        fn symlink(&self, src: &Path, dst: &Path) -> io::Result<()> {
-            unsupported()
-        }
-        fn link(&self, src: &Path, dst: &Path) -> io::Result<()> {
-            unsupported()
-        }
         fn stat(&self, p: &Path) -> io::Result<FileAttr> {
-            unsupported()
+            let mut arr = [0u8; 0x301];
+            let path_as_bytes = p.as_os_str().as_bytes();
+            (&mut arr[..path_as_bytes.len()]).copy_from_slice(path_as_bytes);
+
+            let entry_type = self.0.get_entry_type(&arr)?;
+
+            let size = match entry_type {
+                DirectoryEntryType::File => {
+                    self.0.open_file(0, &arr)?.get_size()?
+                },
+                DirectoryEntryType::Directory => 0
+            };
+            Ok(FileAttr {
+                size,
+                perm: FilePermissions,
+                file_type: entry_type.into()
+            })
         }
         fn lstat(&self, p: &Path) -> io::Result<FileAttr> {
             unsupported()
         }
         fn canonicalize(&self, p: &Path) -> io::Result<PathBuf> {
-            unsupported()
+            let mut fullpath = PathBuf::from("/");
+            for component in p.components() {
+                match component {
+                    Component::Prefix(p) => panic!("Shouldn't obtain a prefix in inner fs impl"),
+                    Component::RootDir => fullpath.push("/"),
+                    Component::CurDir => (),
+                    Component::ParentDir => { fullpath.pop(); },
+                    Component::Normal(p) => fullpath.push(p)
+                }
+            }
+            Ok(p.into())
         }
     }
 
-    impl<T: Object> FileOps for FspSrvFile<T> {
+    impl<T: Object + Debug> FileOps for FspSrvFile<T> {
         fn file_attr(&self) -> io::Result<FileAttr> {
-            unsupported()
+            Ok(FileAttr {
+                size: self.internal.get_size()?,
+                perm: FilePermissions,
+                file_type: FileType::File
+            })
         }
         fn fsync(&self) -> io::Result<()> {
             unsupported()
@@ -313,10 +407,6 @@ mod fspsrv {
         }
         fn read(&self, buf: &mut [u8]) -> io::Result<usize> {
             // TODO: Maybe I should lock the file on read/write?
-            let buf = unsafe {
-                // Safety: Do I really need to explain why &[u8] to &[i8] is legal?
-                slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut i8, buf.len())
-            };
             let read_size = self.internal.read(0, self.offset.load(Ordering::SeqCst), buf.len() as u64, buf)?;
             self.offset.fetch_add(read_size, Ordering::SeqCst);
             Ok(read_size as usize)
@@ -325,10 +415,6 @@ mod fspsrv {
             // TODO: Maybe I should lock the file on read/write?
             // TODO: In append mode, should I ignore offset and just write from
             // the end?
-            let buf = unsafe {
-                // Safety: Do I really need to explain why &[u8] to &[i8] is legal?
-                slice::from_raw_parts(buf.as_ptr() as *const i8, buf.len())
-            };
             self.internal.write(0, self.offset.load(Ordering::SeqCst), buf.len() as u64, buf)?;
             self.offset.fetch_add(buf.len() as u64, Ordering::SeqCst);
             Ok(buf.len())
@@ -378,7 +464,7 @@ use self::fspsrv::FspSrvFs;
 lazy_static! {
     static ref SDMC: MTHResult<FspSrvFs<Session>> = {
         let ifs = IFileSystemProxy::new(|init| init(0))?;
-        let sdcard = ifs.mount_sd_card()?;
+        let sdcard = ifs.open_sd_card_file_system()?;
         Ok(FspSrvFs::new(sdcard))
     };
 }
@@ -399,7 +485,7 @@ fn get_filesystem(path: &Path) -> io::Result<(&'static FilesystemOps, &Path)> {
 
 impl File {
     pub fn open(path: &Path, opts: &OpenOptions) -> io::Result<File> {
-    	let path = getcwd()?.join(path);
+        let path = getcwd()?.join(path);
         let (fs, path) = get_filesystem(&path)?;
         Ok(File(fs.open(path, opts)?))
     }
@@ -545,8 +631,17 @@ pub fn lstat(p: &Path) -> io::Result<FileAttr> {
 
 pub fn canonicalize(p: &Path) -> io::Result<PathBuf> {
     let path = getcwd()?.join(p);
-    let (fs, path) = get_filesystem(&path)?;
-    fs.canonicalize(path)
+    let (fs, fs_path) = get_filesystem(&path)?;
+    let canonicalized = fs.canonicalize(fs_path)?;
+
+    let mut iter = path.components();
+    let prefix = match iter.next() {
+        Some(Component::Prefix(prefix)) => prefix.as_os_str(),
+        _ => panic!("If path is absolute, it should start with prefix")
+    };
+    let mut ret = PathBuf::from(prefix);
+    ret.push(canonicalized);
+    Ok(ret)
 }
 
 pub fn copy(from: &Path, to: &Path) -> io::Result<u64> {

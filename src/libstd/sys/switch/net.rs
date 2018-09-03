@@ -23,29 +23,19 @@ use megaton_hammer::kernel::{Session, TransferMemory, KObject};
 use megaton_hammer::ipcdefs::nn;
 use megaton_hammer::ipcdefs::nn::socket::sf::IClient;
 use megaton_hammer::ipcdefs::nn::socket::resolver::IResolver;
+use megaton_hammer::error::{Module, Error};
 
 pub struct TcpStream(Arc<IClient<Session>>, u32);
 
 macro_rules! handle_err {
     ($x: expr) => {{
-        let val = try_mth!($x);
+        let val = $x?;
         if val.0 == -1 {
-            return Err(io::Error::from_raw_os_error(val.1 as i32));
+            Err(Error::from_module_description(Module::MegatonHammerLinux, val.1))?
         } else {
             val
         }
     }}
-}
-
-macro_rules! try_mth {
-    ($x: expr) => {
-        match $x {
-            Ok(val) => val,
-            Err(err) => {
-                return Err(io::Error::new(io::ErrorKind::Other, Box::new(err)))
-            }
-        }
-    }
 }
 
 fn sockname<F>(f: F) -> io::Result<SocketAddr>
@@ -97,7 +87,7 @@ fn init() -> io::Result<Arc<IClient<Session>>> {
     let bsd = if let Ok(bsd) = IClient::new_bsd_u(init_args) {
         bsd
     } else {
-        try_mth!(IClient::new_bsd_s(init_args))
+        IClient::new_bsd_s(init_args)?
     };
 
     // Leak the handle.
@@ -559,7 +549,7 @@ fn pack_ai(ai: &c::addrinfo, buf: &mut [u8]) -> io::Result<()> {
 }
 
 pub fn lookup_host(host: &str) -> io::Result<LookupHost> {
-    let sfdnsres = try_mth!(IResolver::new());
+    let sfdnsres = IResolver::new()?;
 
     let c_host = CString::new(host)?;
     // TODO
@@ -574,7 +564,7 @@ pub fn lookup_host(host: &str) -> io::Result<LookupHost> {
     // on the switch.
     let mut res = Box::new([0; 0x1000]);
     //TODO: Use gethostbyname instead.
-    let (ret, _errno, _size) = match sfdnsres.get_addr_info(1, 0, 0, c_host.as_bytes_with_nul(), &b"0\0"[..], &hints_packed, &mut *res) {
+    let (ret, _errno, _size) = match sfdnsres.get_addr_info(true, 0, 0, c_host.as_bytes_with_nul(), &b"0\0"[..], &hints_packed, &mut *res) {
         Ok(x) => x,
         Err(err) => return Err(io::Error::new(io::ErrorKind::Other, Box::new(err)))
     };

@@ -22,7 +22,7 @@
 extern crate runwind;
 
 use io::{self, ErrorKind};
-use megaton_hammer::error::Module;
+use megaton_hammer::error::{Error, Module};
 
 pub mod args;
 #[cfg(feature = "backtrace")]
@@ -61,45 +61,47 @@ pub fn unsupported_err() -> io::Error {
 }
 
 pub fn decode_error_kind(errno: i32) -> ErrorKind {
-    // Taken from linux, which is what net seems to use.
     mod linux {
-        pub const ECONNREFUSED: i32 = 111;
-        pub const ECONNRESET: i32 = 104;
-        pub const EPERM: i32 = 1;
-        pub const EACCES: i32 = 13;
-        pub const EPIPE: i32 = 32;
-        pub const ENOTCONN: i32 = 107;
-        pub const ECONNABORTED: i32 = 103;
-        pub const EADDRNOTAVAIL: i32 = 99;
-        pub const EADDRINUSE: i32 = 98;
-        pub const ENOENT: i32 = 2;
-        pub const EINTR: i32 = 4;
-        pub const EINVAL: i32 = 22;
-        pub const ETIMEDOUT: i32 = 110;
-        pub const EEXIST: i32 = 17;
-        pub const EAGAIN: i32 = 11;
-        pub const EWOULDBLOCK: i32 = EAGAIN;
+        pub const ECONNREFUSED: u32 = 111;
+        pub const ECONNRESET: u32 = 104;
+        pub const EPERM: u32 = 1;
+        pub const EACCES: u32 = 13;
+        pub const EPIPE: u32 = 32;
+        pub const ENOTCONN: u32 = 107;
+        pub const ECONNABORTED: u32 = 103;
+        pub const EADDRNOTAVAIL: u32 = 99;
+        pub const EADDRINUSE: u32 = 98;
+        pub const ENOENT: u32 = 2;
+        pub const EINTR: u32 = 4;
+        pub const EINVAL: u32 = 22;
+        pub const ETIMEDOUT: u32 = 110;
+        pub const EEXIST: u32 = 17;
+        pub const EAGAIN: u32 = 11;
+        pub const EWOULDBLOCK: u32 = EAGAIN;
     }
 
-    match errno {
-        linux::ECONNREFUSED => ErrorKind::ConnectionRefused,
-        linux::ECONNRESET => ErrorKind::ConnectionReset,
-        linux::EPERM | linux::EACCES => ErrorKind::PermissionDenied,
-        linux::EPIPE => ErrorKind::BrokenPipe,
-        linux::ENOTCONN => ErrorKind::NotConnected,
-        linux::ECONNABORTED => ErrorKind::ConnectionAborted,
-        linux::EADDRNOTAVAIL => ErrorKind::AddrNotAvailable,
-        linux::EADDRINUSE => ErrorKind::AddrInUse,
-        linux::ENOENT => ErrorKind::NotFound,
-        linux::EINTR => ErrorKind::Interrupted,
-        linux::EINVAL => ErrorKind::InvalidInput,
-        linux::ETIMEDOUT => ErrorKind::TimedOut,
-        linux::EEXIST => ErrorKind::AlreadyExists,
+    // Taken from linux, which is what net seems to use.
+    let err = Error(errno as u32);
+    match (err.module(), err.description_id()) {
+        (Ok(Module::MegatonHammerLinux), linux::ECONNREFUSED) => ErrorKind::ConnectionRefused,
+        (Ok(Module::MegatonHammerLinux), linux::ECONNRESET) => ErrorKind::ConnectionReset,
+        (Ok(Module::MegatonHammerLinux), linux::EPERM) |
+        (Ok(Module::MegatonHammerLinux), linux::EACCES) => ErrorKind::PermissionDenied,
+        (Ok(Module::MegatonHammerLinux), linux::EPIPE) => ErrorKind::BrokenPipe,
+        (Ok(Module::MegatonHammerLinux), linux::ENOTCONN) => ErrorKind::NotConnected,
+        (Ok(Module::MegatonHammerLinux), linux::ECONNABORTED) => ErrorKind::ConnectionAborted,
+        (Ok(Module::MegatonHammerLinux), linux::EADDRNOTAVAIL) => ErrorKind::AddrNotAvailable,
+        (Ok(Module::MegatonHammerLinux), linux::EADDRINUSE) => ErrorKind::AddrInUse,
+        (Ok(Module::MegatonHammerLinux), linux::ENOENT) => ErrorKind::NotFound,
+        (Ok(Module::MegatonHammerLinux), linux::EINTR) => ErrorKind::Interrupted,
+        (Ok(Module::MegatonHammerLinux), linux::EINVAL) => ErrorKind::InvalidInput,
+        (Ok(Module::MegatonHammerLinux), linux::ETIMEDOUT) => ErrorKind::TimedOut,
+        (Ok(Module::MegatonHammerLinux), linux::EEXIST) => ErrorKind::AlreadyExists,
 
         // These two constants can have the same value on some systems,
         // but different values on others, so we can't use a match
         // clause
-        x if x == linux::EAGAIN || x == linux::EWOULDBLOCK =>
+        (Ok(Module::MegatonHammerLinux), x) if x == linux::EAGAIN || x == linux::EWOULDBLOCK =>
             ErrorKind::WouldBlock,
 
         _ => ErrorKind::Other,
@@ -137,10 +139,6 @@ pub fn hashmap_random_keys() -> (u64, u64) {
 #[stable(feature = "rust1", since = "1.0.0")]
 impl From<::megaton_hammer::error::Error> for io::Error {
     fn from(err: ::megaton_hammer::error::Error) -> io::Error {
-        match (err.module(), err.description_id()) {
-            (Ok(Module::FS), 2) => io::Error::from(io::ErrorKind::AlreadyExists),
-            //(Ok(Module::FS), 1002) => io::Error::from(io::ErrorKind::NotFound),
-            _ => io::Error::new(io::ErrorKind::Other, Box::new(err))
-        }
+        io::Error::from_raw_os_error(err.0 as i32)
     }
 }
