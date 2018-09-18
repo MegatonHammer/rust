@@ -142,3 +142,11 @@ impl From<::megaton_hammer::error::Error> for io::Error {
         io::Error::from_raw_os_error(err.0 as i32)
     }
 }
+
+// TODO: Figure out a better way to do this.
+#[stable(feature = "rust1", since = "1.0.0")]
+impl From<::megaton_hammer::error::MegatonHammerDescription> for io::Error {
+    fn from(err: ::megaton_hammer::error::MegatonHammerDescription) -> io::Error {
+        io::Error::from(::megaton_hammer::error::Error::from(err))
+    }
+}
